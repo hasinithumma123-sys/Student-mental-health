@@ -1,10 +1,9 @@
 {
-  "projectId": "gen-lang-client-0791954449",
-  "appId": "1:713619026330:web:2f8d81981a56a21d920a23",
-  "apiKey": "AIzaSyDXGHJnFOIPEsYUCfLb_dNe4eFlPfFkmuI",
-  "authDomain": "gen-lang-client-0791954449.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-cfc13524-6fe9-4964-9c70-e3c9bc566de4",
-  "storageBucket": "gen-lang-client-0791954449.firebasestorage.app",
-  "messagingSenderId": "713619026330",
-  "measurementId": ""
+  "apiKey": "AIzaSyDCkfUeVxVEOstdxqHY0uFesAU6zGnmi7o",
+  "authDomain": "student-mental-health-c5bf8.firebaseapp.com",
+  "projectId": "student-mental-health-c5bf8",
+  "storageBucket": "student-mental-health-c5bf8.firebasestorage.app",
+  "messagingSenderId": "801712815825",
+  "appId": "1:801712815825:web:dd12e5ee7b15c0b487cff0",
+  "measurementId": "G-N3HFEDL48H"
 }

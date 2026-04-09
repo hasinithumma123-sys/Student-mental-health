@@ -32,20 +32,6 @@ import {
   User as FirebaseUser 
 } from 'firebase/auth';
 import { 
-  collection, 
-  doc, 
-  setDoc, 
-  getDoc, 
-  query, 
-  where, 
-  onSnapshot, 
-  addDoc, 
-  updateDoc, 
-  orderBy, 
-  limit,
-  Timestamp
-} from 'firebase/firestore';
-import { 
   PieChart, 
   Pie, 
   Cell, 
@@ -62,8 +48,9 @@ import {
 } from 'recharts';
 import { toast, Toaster } from 'sonner';
 
-import { auth, db } from './firebase';
-import { getChatResponse, generateAssessmentQuestions, analyzeAssessment } from './lib/gemini';
+import { auth } from './firebase';
+import { getChatResponse, generateAssessmentQuestions, analyzeAssessment } from './lib/ai';
+import { fetchUserProfile, upsertUserProfile, createAssessment, fetchCounselors, fetchAppointmentsByStudent, createAppointment, fetchStudents, fetchAllAssessments, fetchAppointmentsByCounselor, fetchActiveSosAlerts, createSosAlert, updateUserProfile, updateAppointmentStatus, updateSosStatus, fetchAssessmentsByStudent } from './lib/db';
 import { UserProfile, Assessment, Appointment, SOSAlert } from './types';
 
 import { Button } from '@/components/ui/button';
@@ -152,8 +139,9 @@ const Login = ({ onLogin }: { onLogin: (role: 'student' | 'staff', data: any) =>
         isCounselor: role === 'staff' ? true : false
       };
 
-      await setDoc(doc(db, 'users', user.uid), userProfile, { merge: true });
-      onLogin(role, { ...userProfile, ...((await getDoc(doc(db, 'users', user.uid))).data()) });
+      await upsertUserProfile(userProfile);
+      const storedProfile = await fetchUserProfile(user.uid);
+      onLogin(role, storedProfile || userProfile);
       toast.success(`Welcome, ${userProfile.name}!`);
     } catch (error) {
       console.error(error);
@@ -293,8 +281,7 @@ const Dashboard = ({ user, assessments }: { user: UserProfile, assessments: Asse
             <CardTitle className="text-white">Progress Over Time</CardTitle>
             <CardDescription className="text-gray-400">Tracking your mental well-being scores</CardDescription>
           </CardHeader>
-          <CardContent className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
+          <CardContent className="p-0"><div style={{ height: "300px", width: "100%" }}><ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorScore" x1="0" y1="0" x2="0" y2="1">
@@ -311,17 +298,7 @@ const Dashboard = ({ user, assessments }: { user: UserProfile, assessments: Asse
                 />
                 <Area type="monotone" dataKey="score" stroke="#10b981" fillOpacity={1} fill="url(#colorScore)" />
               </AreaChart>
-            </ResponsiveContainer>
-          </CardContent>
-        </Card>
-
-        <Card className="bg-zinc-900 border-zinc-800">
-          <CardHeader>
-            <CardTitle className="text-white">Risk Distribution</CardTitle>
-            <CardDescription className="text-gray-400">Summary of all your assessments</CardDescription>
-          </CardHeader>
-          <CardContent className="h-[300px] flex items-center justify-center">
-            <ResponsiveContainer width="100%" height="100%">
+            </ResponsiveContainer></div></CardContent></Card><Card className="bg-zinc-900 border-zinc-800"><CardHeader><CardTitle className="text-white">Risk Distribution</CardTitle><CardDescription className="text-gray-400">Summary of all your assessments</CardDescription></CardHeader><CardContent className="p-0"><div style={{ height: "300px", width: "100%" }}><ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
                   data={pieData}
@@ -340,9 +317,7 @@ const Dashboard = ({ user, assessments }: { user: UserProfile, assessments: Asse
                   contentStyle={{ backgroundColor: '#18181b', border: '1px solid #3f3f46', color: '#fff' }}
                 />
                 <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </CardContent>
+              </PieChart></ResponsiveContainer></div></CardContent>
         </Card>
       </div>
 
@@ -420,7 +395,7 @@ const AssessmentTool = ({ user, onComplete }: { user: UserProfile, onComplete: (
         timestamp: new Date().toISOString()
       };
 
-      await addDoc(collection(db, 'assessments'), assessment);
+      await createAssessment(assessment);
       toast.success("Assessment completed!");
       onComplete();
     } catch (error) {
@@ -623,19 +598,19 @@ const Appointments = ({ user }: { user: UserProfile }) => {
   ];
 
   useEffect(() => {
-    const q = query(collection(db, 'users'), where('isCounselor', '==', true));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as UserProfile);
-      setCounselors(list);
-    });
+    const loadStudentData = async () => {
+      const [counselors, appts] = await Promise.all([
+        fetchCounselors(),
+        fetchAppointmentsByStudent(user.uid)
+      ]);
 
-    const qAppt = query(collection(db, 'appointments'), where('studentUid', '==', user.uid));
-    const unsubscribeAppt = onSnapshot(qAppt, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
-      setMyAppointments(list.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime()));
-    });
+      setCounselors(counselors);
+      setMyAppointments(appts.sort((a, b) => new Date(b.dateTime).getTime() - new Date(a.dateTime).getTime()));
+    };
 
-    return () => { unsubscribe(); unsubscribeAppt(); };
+    if (user.uid) {
+      loadStudentData().catch(error => console.error(error));
+    }
   }, [user.uid]);
 
   const handleBook = async () => {
@@ -658,7 +633,7 @@ const Appointments = ({ user }: { user: UserProfile }) => {
         details,
         createdAt: new Date().toISOString()
       };
-      await addDoc(collection(db, 'appointments'), appt);
+      await createAppointment(appt);
       toast.success("Appointment request sent!");
       setDetails('');
     } catch (error) {
@@ -679,7 +654,7 @@ const Appointments = ({ user }: { user: UserProfile }) => {
         <CardContent className="space-y-4">
           <div className="space-y-2">
             <Label className="text-gray-300">Select Counselor</Label>
-            <Select value={selectedCounselor} onValueChange={setSelectedCounselor}>
+            <Select value={selectedCounselor} onValueChange={(value) => value && setSelectedCounselor(value)}>
               <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white">
                 <SelectValue placeholder="Choose a counselor" />
               </SelectTrigger>
@@ -712,7 +687,7 @@ const Appointments = ({ user }: { user: UserProfile }) => {
           </div>
           <div className="space-y-2">
             <Label className="text-gray-300">Preferred Time</Label>
-            <Select value={preferredTime} onValueChange={setPreferredTime}>
+            <Select value={preferredTime} onValueChange={(value) => value && setPreferredTime(value)}>
               <SelectTrigger className="bg-zinc-800 border-zinc-700 text-white">
                 <SelectValue placeholder="Select time" />
               </SelectTrigger>
@@ -873,41 +848,28 @@ const StaffPortal = ({ user: initialUser }: { user: UserProfile }) => {
 
   useEffect(() => {
     if (!user.uid) return;
-    
-    const qStudents = query(collection(db, 'users'), where('role', '==', 'student'));
-    const unsubscribeStudents = onSnapshot(qStudents, (snapshot) => {
-      setStudents(snapshot.docs.map(doc => doc.data() as UserProfile));
-    });
 
-    const qAssessments = query(collection(db, 'assessments'));
-    const unsubscribeAssessments = onSnapshot(qAssessments, (snapshot) => {
-      const list = snapshot.docs.map(doc => doc.data() as Assessment);
-      setAssessments(list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-    });
+    const loadStaffData = async () => {
+      const [students, assessments, appointments, sosAlerts] = await Promise.all([
+        fetchStudents(),
+        fetchAllAssessments(),
+        fetchAppointmentsByCounselor(user.uid),
+        fetchActiveSosAlerts()
+      ]);
 
-    const qAppts = query(collection(db, 'appointments'), where('counselorUid', '==', user.uid));
-    const unsubscribeAppts = onSnapshot(qAppts, (snapshot) => {
-      const list = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Appointment));
-      setAppointments(list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    });
-
-    const qSos = query(collection(db, 'sos'), where('status', '==', 'active'));
-    const unsubscribeSos = onSnapshot(qSos, (snapshot) => {
-      setSosAlerts(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SOSAlert)));
-    });
-
-    return () => {
-      unsubscribeStudents();
-      unsubscribeAssessments();
-      unsubscribeAppts();
-      unsubscribeSos();
+      setStudents(students);
+      setAssessments(assessments.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      setAppointments(appointments.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setSosAlerts(sosAlerts);
     };
+
+    loadStaffData().catch(error => console.error(error));
   }, [user.uid]);
 
   const handleUpdateProfile = async () => {
     setUpdatingProfile(true);
     try {
-      await updateDoc(doc(db, 'users', user.uid), {
+      await updateUserProfile(user.uid, {
         specialization,
         bio
       });
@@ -933,7 +895,8 @@ const StaffPortal = ({ user: initialUser }: { user: UserProfile }) => {
 
   const handleApptStatus = async (apptId: string, status: 'confirmed' | 'rejected') => {
     try {
-      await updateDoc(doc(db, 'appointments', apptId), { status });
+      await updateAppointmentStatus(apptId, status);
+      setAppointments(prev => prev.map(a => a.id === apptId ? { ...a, status } : a));
       toast.success(`Appointment ${status}`);
     } catch (error) {
       console.error(error);
@@ -971,7 +934,8 @@ const StaffPortal = ({ user: initialUser }: { user: UserProfile }) => {
                   <div key={alert.id} className="flex justify-between items-center bg-red-500/20 p-2 rounded">
                     <span className="text-white">{alert.studentName} is in distress!</span>
                     <Button size="sm" className="bg-red-600" onClick={async () => {
-                      await updateDoc(doc(db, 'sos', alert.id!), { status: 'resolved' });
+                      await updateSosStatus(alert.id!, 'resolved');
+                      setSosAlerts(prev => prev.filter(a => a.id !== alert.id));
                       toast.success("Alert marked as resolved");
                     }}>Resolve</Button>
                   </div>
@@ -1151,18 +1115,11 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        const docRef = doc(db, 'users', firebaseUser.uid);
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const profile = docSnap.data() as UserProfile;
+        const profile = await fetchUserProfile(firebaseUser.uid);
+        if (profile) {
           setUser(profile);
-          
-          // Listen for assessments
-          const q = query(collection(db, 'assessments'), where('studentUid', '==', profile.uid));
-          onSnapshot(q, (snapshot) => {
-            const list = snapshot.docs.map(doc => doc.data() as Assessment);
-            setAssessments(list.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-          });
+          const studentAssessments = await fetchAssessmentsByStudent(profile.uid);
+          setAssessments(studentAssessments);
         }
       } else {
         setUser(null);
@@ -1175,7 +1132,7 @@ export default function App() {
   const handleSOS = async () => {
     if (!user) return;
     try {
-      await addDoc(collection(db, 'sos'), {
+      await createSosAlert({
         studentUid: user.uid,
         studentName: user.name,
         timestamp: new Date().toISOString(),
@@ -1349,3 +1306,9 @@ export default function App() {
     </div>
   );
 }
+
+
+
+
+
+
