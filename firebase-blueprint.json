@@ -1,0 +1,80 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Student or Staff user profile",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "id": { "type": "string", "description": "Student ID or Staff ID" },
+        "phone": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "staff"] },
+        "name": { "type": "string" },
+        "email": { "type": "string" },
+        "isCounselor": { "type": "boolean", "description": "Only for staff" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "id", "role"]
+    },
+    "Assessment": {
+      "title": "Assessment",
+      "description": "Student mental health questionnaire response",
+      "type": "object",
+      "properties": {
+        "studentUid": { "type": "string" },
+        "score": { "type": "number" },
+        "riskLevel": { "type": "string", "enum": ["low", "moderate", "high"] },
+        "stressLevel": { "type": "number" },
+        "moodPattern": { "type": "string" },
+        "sleepQuality": { "type": "number" },
+        "responses": { "type": "array", "items": { "type": "number" } },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentUid", "score", "riskLevel", "timestamp"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Counseling session booking",
+      "type": "object",
+      "properties": {
+        "studentUid": { "type": "string" },
+        "counselorUid": { "type": "string" },
+        "dateTime": { "type": "string", "format": "date-time" },
+        "mode": { "type": "string", "enum": ["call", "video", "in-person"] },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "rejected"] },
+        "details": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentUid", "counselorUid", "dateTime", "status"]
+    },
+    "SOS": {
+      "title": "SOS Alert",
+      "description": "Panic button alert",
+      "type": "object",
+      "properties": {
+        "studentUid": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["active", "resolved"] }
+      },
+      "required": ["studentUid", "timestamp", "status"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/assessments/{assessmentId}": {
+      "schema": "Assessment",
+      "description": "Mental health assessments"
+    },
+    "/appointments/{appointmentId}": {
+      "schema": "Appointment",
+      "description": "Counseling appointments"
+    },
+    "/sos/{sosId}": {
+      "schema": "SOS",
+      "description": "Panic alerts"
+    }
+  }
+}
